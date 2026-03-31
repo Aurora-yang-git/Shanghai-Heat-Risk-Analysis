@@ -35,16 +35,23 @@ try:
 except ImportError:
     HAS_SCALEBAR = False
 
-# Basemap tile source — CartoDB Positron
-TILE_SRC = ctx.providers.CartoDB.Positron
+TILE_SOURCES = [
+    ctx.providers.CartoDB.Positron,
+    "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    ctx.providers.Stadia.StamenTonerLite,
+]
 
 
 def add_basemap(ax, crs):
-    """Add CartoDB Positron basemap tiles."""
-    try:
-        ctx.add_basemap(ax, crs=crs, source=TILE_SRC, zoom=11, alpha=0.5)
-    except Exception as e:
-        print(f"    [warn] Basemap failed: {e}")
+    """Try multiple tile sources; fall back to light gray background."""
+    for src in TILE_SOURCES:
+        try:
+            ctx.add_basemap(ax, crs=crs, source=src, zoom=11, alpha=0.4)
+            return
+        except Exception:
+            continue
+    ax.set_facecolor("#f5f5f5")
+    print("    [warn] All basemap sources failed, using gray background")
 
 
 def add_north_arrow(ax, x=0.95, y=0.95):
@@ -119,8 +126,8 @@ def plot_classified_map(
     fig.savefig(png_path, dpi=300, bbox_inches="tight")
     fig.savefig(svg_path, format="svg", bbox_inches="tight")
     plt.close(fig)
-    print(f"    ✓ {png_path.name} ({png_path.stat().st_size / 1e6:.1f} MB)")
-    print(f"    ✓ {svg_path.name}")
+    print(f"    [OK] {png_path.name} ({png_path.stat().st_size / 1e6:.1f} MB)")
+    print(f"    [OK] {svg_path.name}")
 
 
 def plot_priority_composite(gdf: gpd.GeoDataFrame):
@@ -163,7 +170,7 @@ def plot_priority_composite(gdf: gpd.GeoDataFrame):
     fig.savefig(png_path, dpi=300, bbox_inches="tight")
     fig.savefig(svg_path, format="svg", bbox_inches="tight")
     plt.close(fig)
-    print(f"    ✓ {png_path.name}")
+    print(f"    [OK] {png_path.name}")
 
 
 def plot_dashboard(gdf: gpd.GeoDataFrame):
@@ -205,7 +212,7 @@ def plot_dashboard(gdf: gpd.GeoDataFrame):
     fig.savefig(png_path, dpi=300, bbox_inches="tight")
     fig.savefig(svg_path, format="svg", bbox_inches="tight")
     plt.close(fig)
-    print(f"    ✓ {png_path.name}")
+    print(f"    [OK] {png_path.name}")
 
 
 def main():

@@ -39,7 +39,7 @@ def main():
     if BLOCKS_FILE.exists():
         gdf = gpd.read_file(BLOCKS_FILE)
         print(f"  [skip] Blocks file already exists with {len(gdf)} blocks")
-        print(f"  → {BLOCKS_FILE}")
+        print(f"  -> {BLOCKS_FILE}")
         return
 
     # 1. Load and filter roads
@@ -109,7 +109,7 @@ def main():
     # Save
     BLOCKS_FILE.parent.mkdir(parents=True, exist_ok=True)
     gdf.to_file(BLOCKS_FILE, driver="GPKG")
-    print(f"\n  ✓ Saved {len(gdf)} blocks → {BLOCKS_FILE}")
+    print(f"\n  [OK] Saved {len(gdf)} blocks -> {BLOCKS_FILE}")
     print(f"    File size: {BLOCKS_FILE.stat().st_size / 1e6:.1f} MB")
 
     print("\n" + "=" * 60)

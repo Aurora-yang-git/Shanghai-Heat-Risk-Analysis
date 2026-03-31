@@ -65,7 +65,7 @@ def make_boundary() -> gpd.GeoDataFrame:
 
     ensure_dir(BOUNDARY_FILE.parent)
     gdf.to_file(BOUNDARY_FILE, driver="GPKG")
-    print(f"  ✓ Boundary saved → {BOUNDARY_FILE}")
+    print(f"  [OK] Boundary saved -> {BOUNDARY_FILE}")
     return gdf
 
 
@@ -79,7 +79,7 @@ def clip_reproject_raster(
     """
     Clip a raster to the Shanghai bounding box, reproject to UTM 51N,
     optionally extract a single band and apply a scale factor.
-    Uses a two-step approach: window-based read → reproject.
+    Uses a two-step approach: window-based read -> reproject.
     """
     print(f"\n  Processing {label or src_path.name} ...")
 
@@ -167,7 +167,7 @@ def clip_reproject_raster(
 
     sz = dst_path.stat().st_size / 1e6
     vcount = np.count_nonzero(np.isfinite(dst_data))
-    print(f"    ✓ {dst_path.name}  ({sz:.1f} MB, {vcount} valid pixels, CRS={dst_crs})")
+    print(f"    [OK] {dst_path.name}  ({sz:.1f} MB, {vcount} valid pixels, CRS={dst_crs})")
 
 
 def main():
@@ -185,7 +185,7 @@ def main():
     clip_reproject_raster(
         utci_src[0], UTCI_PROCESSED,
         band_index=1, scale_factor=0.01,
-        label="UTCI (Int16 → °C)",
+        label="UTCI (Int16 -> °C)",
     )
 
     # --- Population ---
