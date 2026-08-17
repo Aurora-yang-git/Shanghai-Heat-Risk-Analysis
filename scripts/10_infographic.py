@@ -71,9 +71,17 @@ def land_silhouette(gdf_all):
     buffer back — internal holes seal shut, the sea stays outside.
     """
     if "sil" not in _SILHOUETTE_CACHE:
+        from shapely.geometry import Polygon, MultiPolygon
         roads = gdf_all[gdf_all["block_type"] == "road"]
         closed = (roads.geometry.simplify(50)
                   .buffer(1500).union_all().buffer(-1500))
+        # Drop interior rings (lakes, parkland) so the land mask is solid —
+        # only the sea outside the exterior outline stays unfilled.
+        if closed.geom_type == "Polygon":
+            closed = Polygon(closed.exterior)
+        else:
+            closed = MultiPolygon(
+                [Polygon(p.exterior) for p in closed.geoms])
         _SILHOUETTE_CACHE["sil"] = closed
     return _SILHOUETTE_CACHE["sil"]
 
