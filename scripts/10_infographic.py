@@ -166,25 +166,30 @@ def resolve_vmax(gdf, column, vmax_spec):
 
 def render_map(ax, gdf, gdf_all, key, legend=True):
     col, cmap, vmin, vmax_spec, title, subtitle, leg_label = PANEL_SPECS[key]
-    draw_boundary = False
+
+    # Full coverage on every panel: colour EVERY block (road + grid) whose
+    # representative point falls inside the land silhouette, so the land
+    # area has no gray holes; the sea keeps the gray frame.
+    sil = land_silhouette(gdf_all)
+    if "mask" not in _SILHOUETTE_CACHE:
+        _SILHOUETTE_CACHE["mask"] = gdf_all.representative_point().within(sil)
+    plot_gdf = gdf_all.loc[_SILHOUETTE_CACHE["mask"]].copy()
+    if col == "log_green":
+        plot_gdf["log_green"] = np.log1p(plot_gdf["green_area_m2"])
+
     if vmin == "rank":
-        # Full-coverage variant: colour EVERY block (road + grid) whose
-        # representative point falls inside the land silhouette, so the
-        # land area has no gray holes; the sea keeps the gray frame.
-        draw_boundary = True
-        sil = land_silhouette(gdf_all)
-        inside = gdf_all.representative_point().within(sil)
-        gdf = gdf_all.loc[inside, [col, "geometry"]].copy()
-        gdf["_rank"] = gdf[col].rank(pct=True) * 100
+        plot_gdf["_rank"] = plot_gdf[col].rank(pct=True) * 100
         col = "_rank"
         vmin, vmax = 0.0, 100.0
     else:
+        # Scale still anchored on the road blocks so panel scales match
+        # the earlier versions; grid blocks just extend the coverage.
         vmax = resolve_vmax(gdf, col, vmax_spec)
         if vmin == "sym":
             vmin = -vmax
 
     gdf_all.plot(ax=ax, color="#E0E0E0", edgecolor="none", linewidth=0)
-    gdf.plot(
+    plot_gdf.plot(
         column=col, ax=ax, cmap=cmap,
         vmin=vmin, vmax=vmax,
         linewidth=0, antialiased=False,
@@ -196,9 +201,8 @@ def render_map(ax, gdf, gdf_all, key, legend=True):
             "label": leg_label,
         } if legend else {},
     )
-    if draw_boundary:
-        gpd.GeoSeries([land_silhouette(gdf_all)], crs=gdf_all.crs).boundary.plot(
-            ax=ax, color="#999999", linewidth=0.4)
+    gpd.GeoSeries([sil], crs=gdf_all.crs).boundary.plot(
+        ax=ax, color="#999999", linewidth=0.4)
     ax.set_axis_off()
     ax.set_title(title, fontsize=10, fontweight="bold",
                  color=C["dark"], pad=3, loc="center")
