@@ -28,7 +28,9 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import FancyBboxPatch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config import BLOCKS_FILE, MAPS_DIR
+from matplotlib.colors import LinearSegmentedColormap
+
+from config import BLOCKS_FILE, MAPS_DIR, PROCESSED_DIR
 
 warnings.filterwarnings("ignore")
 
@@ -49,6 +51,32 @@ C = {
     "gray":          "#666666",
     "dark":          "#222222",
 }
+
+# Green→red ramp without the pale cream centre of RdYlGn — mid-ranked blocks
+# stay visibly coloured instead of reading as blank white.
+PRIORITY_RAMP = LinearSegmentedColormap.from_list(
+    "priority",
+    ["#1a9850", "#66bd63", "#a6d96a", "#d9ef8b",
+     "#fee08b", "#fdae61", "#f46d43", "#d73027", "#a50026"],
+)
+
+_SILHOUETTE_CACHE = {}
+
+
+def land_silhouette(gdf_all):
+    """Land outline built from road blocks via morphological closing.
+
+    shanghai_boundary.gpkg is only the rectangular study frame, so the road
+    tessellation is the best available land mask: buffer out 1.5 km, union,
+    buffer back — internal holes seal shut, the sea stays outside.
+    """
+    if "sil" not in _SILHOUETTE_CACHE:
+        roads = gdf_all[gdf_all["block_type"] == "road"]
+        closed = (roads.geometry.simplify(50)
+                  .buffer(1500).union_all().buffer(-1500))
+        _SILHOUETTE_CACHE["sil"] = closed
+    return _SILHOUETTE_CACHE["sil"]
+
 
 # Map panel specs: (column, cmap, vmin, vmax_mode, title, subtitle)
 # vmax_mode: float = fixed vmax; "p97" = 97th percentile; "p95" = 95th percentile
@@ -92,12 +120,12 @@ PANEL_SPECS = {
     # concentrated (p25–p75 ≈ 0.040–0.046), so a linear scale renders one
     # orange blob; ranking spreads the full green→red ramp evenly.
     "ohspi": (
-        "ohspi", "RdYlGn_r", "rank", None,
+        "ohspi", PRIORITY_RAMP, "rank", None,
         "⑦ Outdoor Priority (OHSPI)", "red = high risk, low green space",
         "OHSPI percentile — relative priority",
     ),
     "ihspi": (
-        "ihspi", "RdYlGn_r", "rank", None,
+        "ihspi", PRIORITY_RAMP, "rank", None,
         "⑧ Indoor Priority (IHSPI)", "red = high risk, few indoor cooling facilities",
         "IHSPI percentile — relative priority",
     ),
@@ -130,8 +158,15 @@ def resolve_vmax(gdf, column, vmax_spec):
 
 def render_map(ax, gdf, gdf_all, key, legend=True):
     col, cmap, vmin, vmax_spec, title, subtitle, leg_label = PANEL_SPECS[key]
+    draw_boundary = False
     if vmin == "rank":
-        gdf = gdf.copy()
+        # Full-coverage variant: colour EVERY block (road + grid) whose
+        # representative point falls inside the land silhouette, so the
+        # land area has no gray holes; the sea keeps the gray frame.
+        draw_boundary = True
+        sil = land_silhouette(gdf_all)
+        inside = gdf_all.representative_point().within(sil)
+        gdf = gdf_all.loc[inside, [col, "geometry"]].copy()
         gdf["_rank"] = gdf[col].rank(pct=True) * 100
         col = "_rank"
         vmin, vmax = 0.0, 100.0
@@ -153,6 +188,9 @@ def render_map(ax, gdf, gdf_all, key, legend=True):
             "label": leg_label,
         } if legend else {},
     )
+    if draw_boundary:
+        gpd.GeoSeries([land_silhouette(gdf_all)], crs=gdf_all.crs).boundary.plot(
+            ax=ax, color="#999999", linewidth=0.4)
     ax.set_axis_off()
     ax.set_title(title, fontsize=10, fontweight="bold",
                  color=C["dark"], pad=3, loc="center")
