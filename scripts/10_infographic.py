@@ -182,11 +182,15 @@ def render_map(ax, gdf, gdf_all, key, legend=True):
         col = "_rank"
         vmin, vmax = 0.0, 100.0
     else:
-        # Scale still anchored on the road blocks so panel scales match
-        # the earlier versions; grid blocks just extend the coverage.
-        vmax = resolve_vmax(gdf, col, vmax_spec)
-        if vmin == "sym":
-            vmin = -vmax
+        # Contrast-stretch to the 2–98 percentile of the DISPLAYED blocks.
+        # Rural grid values bunch at one end of each index; a fixed scale
+        # renders the filled map as a flat single-colour mass. Stretching
+        # to the displayed distribution restores the original gradient.
+        vmin = float(plot_gdf[col].quantile(0.02))
+        vmax = float(plot_gdf[col].quantile(0.98))
+        if vmax <= vmin:  # degenerate distribution — fall back to spec
+            vmax = resolve_vmax(gdf, col, vmax_spec)
+            vmin = 0.1
 
     gdf_all.plot(ax=ax, color="#E0E0E0", edgecolor="none", linewidth=0)
     plot_gdf.plot(
