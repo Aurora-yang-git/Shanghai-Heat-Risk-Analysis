@@ -88,17 +88,18 @@ PANEL_SPECS = {
         "⑥ Indoor Cooling Facilities (IHSI)", "Weighted POI density per capita",
         "IHSI score",
     ),
-    # Priority maps: diverging, centered on 0 (risk == supply).
-    # vmin="sym" mirrors the resolved vmax so red/green are comparable.
+    # Priority maps: percentile-rank coloring. The raw index is hyper-
+    # concentrated (p25–p75 ≈ 0.040–0.046), so a linear scale renders one
+    # orange blob; ranking spreads the full green→red ramp evenly.
     "ohspi": (
-        "ohspi", "RdYlGn_r", "sym", "p97",
+        "ohspi", "RdYlGn_r", "rank", None,
         "⑦ Outdoor Priority (OHSPI)", "red = high risk, low green space",
-        "OHSPI = HRI − OHSI",
+        "OHSPI percentile — relative priority",
     ),
     "ihspi": (
-        "ihspi", "RdYlGn_r", "sym", "p97",
+        "ihspi", "RdYlGn_r", "rank", None,
         "⑧ Indoor Priority (IHSPI)", "red = high risk, few indoor cooling facilities",
-        "IHSPI = HRI − IHSI",
+        "IHSPI percentile — relative priority",
     ),
 }
 
@@ -129,9 +130,15 @@ def resolve_vmax(gdf, column, vmax_spec):
 
 def render_map(ax, gdf, gdf_all, key, legend=True):
     col, cmap, vmin, vmax_spec, title, subtitle, leg_label = PANEL_SPECS[key]
-    vmax = resolve_vmax(gdf, col, vmax_spec)
-    if vmin == "sym":
-        vmin = -vmax
+    if vmin == "rank":
+        gdf = gdf.copy()
+        gdf["_rank"] = gdf[col].rank(pct=True) * 100
+        col = "_rank"
+        vmin, vmax = 0.0, 100.0
+    else:
+        vmax = resolve_vmax(gdf, col, vmax_spec)
+        if vmin == "sym":
+            vmin = -vmax
 
     gdf_all.plot(ax=ax, color="#E0E0E0", edgecolor="none", linewidth=0)
     gdf.plot(
