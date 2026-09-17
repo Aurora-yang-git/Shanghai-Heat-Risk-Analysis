@@ -27,10 +27,34 @@ STEPS = [
 ]
 
 
+def preflight_check():
+    """Verify required files exist before starting long-running steps."""
+    from config import URBAN_DISTRICTS_FILE, BLOCKS_FILE, ANALYSIS_SCOPE
+    missing = []
+    if ANALYSIS_SCOPE == "urban_core" and not URBAN_DISTRICTS_FILE.exists():
+        missing.append(
+            f"  MISSING: {URBAN_DISTRICTS_FILE}\n"
+            f"    → Run 01_download_data.py first to download district boundaries."
+        )
+    if not BLOCKS_FILE.exists():
+        missing.append(
+            f"  MISSING: {BLOCKS_FILE}\n"
+            f"    → Run steps 00–04 first to create road-enclosed blocks."
+        )
+    if missing:
+        print("\n[PREFLIGHT FAILED]")
+        for m in missing:
+            print(m)
+        sys.exit(1)
+    print("  [OK] Preflight checks passed")
+
+
 def main():
     print("\n" + "#" * 60)
     print("  Shanghai Heat Risk Analysis — Full Pipeline")
     print("#" * 60 + "\n")
+
+    preflight_check()
 
     results = []
     total_start = time.time()

@@ -1,3 +1,11 @@
+---
+tags:
+  - grade/G11
+  - type/project
+  - status/active
+last_archived: 2026-06-05
+---
+
 # Heat Risk Index and Shelter Priority Model — Technical Specification
 
 > Shanghai Block-Level Extreme Heat Risk Assessment and Shelter Supply-Demand Matching
@@ -54,12 +62,15 @@ This model addresses both gaps by computing a multiplicative Heat Risk Index ($\
 - Building footprint correlates with floor area and occupancy — a standard proxy when census-calibrated gridded data (e.g., WorldPop 5.4 GB) is inaccessible. Limitation: industrial/commercial buildings inflate estimates in non-residential zones.
 
 **A4.** Nighttime light ($NL_i$) and gridded GDP ($GDP_i$) are **negative** proxies for Vulnerability ($V$) — higher values indicate greater adaptive capacity.
-- Brighter nightlight → denser infrastructure, higher AC penetration, better-maintained housing (Chen et al., 2021). Higher GDP → purchasing power for cooling, healthcare access, housing insulation (Kummu et al., 2024). Both are established socio-economic resilience proxies in heat vulnerability literature.
+- Brighter nightlight → denser infrastructure, higher AC penetration, better-maintained housing (Chen et al., 2021). Higher GDP → purchasing power for cooling, healthcare access, housing insulation (Kummu et al., 2024). Both are established socio-economic resilience proxies in heat vulnerability literature. Population density is **excluded** from $V$ because it already appears in Exposure ($E$) — including it in both would double-weight it in the HRI product and conflate thermal exposure with demographic vulnerability.
 
-**A5.** Cooling shelters split into outdoor ($\text{OHSI}$, green space) and indoor ($\text{IHSI}$, commercial/cultural/transit POIs), each weighted by operating-time $W_T$.
+**A5.5.** OHSI and IHSI are computed by **percentile rank normalization** within the urban core blocks, rather than min-max normalization across all 73,270 blocks.
+- Min-max across all blocks assigns 0.1 (minimum) to 89–91% of blocks (those with zero green space or no POIs), making the maps visually uniform. Percentile ranking reveals relative shelter access among urban blocks: the best-served urban block receives 0.9, the worst-served receives 0.1, and blocks with zero shelter all tie at 0.1. This is a relative index, not an absolute adequacy threshold.
+
+**A6.** Cooling shelters split into outdoor ($\text{OHSI}$, green space) and indoor ($\text{IHSI}$, commercial/cultural/transit POIs), each weighted by operating-time $W_T$.
 - In Shanghai, indoor air-conditioned spaces (malls, metro, cafés) are the primary extreme-heat refuge — distinct from cities where parks dominate. Separating the two enables targeted policy: green space investment vs. extended building opening hours. $W_T$ reflects that a metro station (17 h/day) provides more shelter-hours than a library (8 h/day).
 
-**A6.** Road-enclosed blocks reflect urban morphology better than regular grids. A 500 m fishnet fills gaps where road networks are sparse.
+**A7.** Road-enclosed blocks reflect urban morphology better than regular grids. A 500 m fishnet fills gaps where road networks are sparse.
 - Road blocks vary with density: 100–200 m in the city centre (matching the "15-minute life circle"), 500–1400 m in suburbs. A uniform grid would over-segment dense areas and under-segment sparse ones. The fishnet backfill ensures 100% coverage without sacrificing morphological fidelity.
 
 ---
@@ -121,6 +132,40 @@ Each of the 73,270 blocks receives aggregated values from the four rasters and t
 
 ---
 
+## 4a. Study Area
+
+### Urban Core Scope
+
+This analysis focuses on Shanghai's **7 central urban districts** rather than the full 6,340 km² municipality:
+
+| District (CN) | District (EN) | Area (km²) | Urban blocks |
+|--------------|---------------|------------|--------------|
+| 黄浦区 | Huangpu | 20.6 | 589 |
+| 徐汇区 | Xuhui | 55.2 | 606 |
+| 长宁区 | Changning | 37.2 | 479 |
+| 静安区 | Jing'an | 36.7 | 554 |
+| 普陀区 | Putuo | 55.8 | 524 |
+| 虹口区 | Hongkou | 23.4 | 420 |
+| 杨浦区 | Yangpu | 60.5 | 682 |
+| **Total** | | **289.4 km²** | **3,854 blocks** |
+
+All 3,854 urban core blocks have $\text{pop\_sum} > 0$ (the urban core has no uninhabited road-enclosed blocks). District boundaries are sourced from OpenStreetMap via Nominatim and clipped to the Shanghai bounding box.
+
+**Rationale for urban core scope:**
+1. **Policy relevance**: Shanghai's extreme heat intervention programs target the densely inhabited urban core. Rural fringe and industrial zones (61.8% of the 73,270 total blocks are uninhabited) generate no heat mortality and dilute spatial differentiation in the maps.
+2. **OSM data quality**: OSM POI coverage in the urban core (~2,000 POIs per 100 km²) is substantially better than suburban areas, making the IHSI more reliable within this area.
+3. **Morphological homogeneity**: The 7 central districts share similar urban form (high-density residential interspersed with commercial corridors), making block-to-block comparison of OHSI and IHSI methodologically sound.
+
+### Data Limitations
+
+**OSM POI undercounting**: OSM records approximately 7,982 indoor shelter POIs across all of Shanghai (3,920 restaurants, 1,516 cafes, 895 fast_food, etc.). Real-world counts from Gaode or Baidu are approximately 20× higher. IHSI therefore captures **relative access to de-facto mapped shelters**, not all actual indoor cooling options. Two blocks with IHSI = 0.1 (minimum) are both shelter-poor relative to the urban core — one may have one unmapped café, the other none.
+
+**Green space (OHSI) undercounting**: OSM landuse polygons do not include private/internal green areas within residential compounds (小区绿化), which can account for 30–50% of actual green area in Shanghai residential blocks. OHSI therefore underestimates green space availability in high-density residential districts.
+
+**Population proxy**: OSM building footprint area ≠ census-calibrated population. Industrial and commercial buildings inflate estimated $PD_i$ in non-residential zones.
+
+---
+
 ## 5. Model Architecture
 
 ```mermaid
@@ -146,9 +191,8 @@ flowchart TD
     subgraph HRI["🔥 Heat Risk Index — HRI (Section 6)"]
         Z_T --> HAZ["Hazard H_i = 𝒩⁺(T_i)"]
         Z_PD --> EXP["Exposure E_i = 𝒩⁺(PD_i)"]
-        Z_NL --> VUL["Vulnerability V_i =\n⅓[𝒩⁻(NL_i) + 𝒩⁻(GDP_i) + 𝒩⁺(PD_i)]"]
+        Z_NL --> VUL["Vulnerability V_i =\n½[𝒩⁻(NL_i) + 𝒩⁻(GDP_i)]"]
         Z_GDP --> VUL
-        Z_PD --> VUL
         HAZ --> MULT["HRI_i = H_i × E_i × V_i"]
         EXP --> MULT
         VUL --> MULT
@@ -156,9 +200,9 @@ flowchart TD
     end
 
     subgraph SHELTER["🏠 Shelter Supply (Section 7)"]
-        Z_GSA --> OHSI["Outdoor Heat Shelter Index\nOHSI_i = 𝒩⁺(GSA_i / POP_i)"]
+        Z_GSA --> OHSI["Outdoor Heat Shelter Index\nOHSI_i = rank_normalize(GSA_i / POP_i)"]
         Z_PD --> OHSI
-        Z_POI --> IHSI["Indoor Heat Shelter Index\nIHSI_i = 𝒩⁺(POID_i / PD_i × W̄_T)"]
+        Z_POI --> IHSI["Indoor Heat Shelter Index\nIHSI_i = rank_normalize(POID_i / PD_i × W̄_T)"]
         Z_PD --> IHSI
     end
 
@@ -176,11 +220,10 @@ flowchart TD
 |-------------|-----------|------------|---------|------------------------|
 | GloUTCI-M (°C) | mean → $T_i$ | Hazard $H_i$ | $\mathcal{N}^{+}(T_i)$ | + : hotter → riskier |
 | Population (buildings) | sum → $POP_i$, density → $PD_i$ | Exposure $E_i$ | $\mathcal{N}^{+}(PD_i)$ | + : denser → more exposed |
-| PCNL Nightlight (DN) | mean → $NL_i$ | Vulnerability $V_i$ (1/3) | $\mathcal{N}^{-}(NL_i)$ | − : brighter → less vulnerable |
-| Gridded GDP (USD PPP) | mean → $GDP_i$ | Vulnerability $V_i$ (1/3) | $\mathcal{N}^{-}(GDP_i)$ | − : richer → less vulnerable |
-| Population | density → $PD_i$ | Vulnerability $V_i$ (1/3) | $\mathcal{N}^{+}(PD_i)$ | + : denser → age-sensitive proxy |
-| OSM landuse (green) | area → $GSA_i$ | Outdoor Heat Shelter Index $\text{OHSI}_i$ | $\mathcal{N}^{+}(GSA_i / POP_i)$ | + : more green/capita → more shelter |
-| OSM POIs + transport | weighted count → $POID_i$ | Indoor Heat Shelter Index $\text{IHSI}_i$ | $\mathcal{N}^{+}(POID_i / PD_i \times \bar{W}_T)$ | + : more POI/capita → more shelter |
+| PCNL Nightlight (DN) | mean → $NL_i$ | Vulnerability $V_i$ (½) | $\mathcal{N}^{-}(NL_i)$ | − : brighter → less vulnerable |
+| Gridded GDP (USD PPP) | mean → $GDP_i$ | Vulnerability $V_i$ (½) | $\mathcal{N}^{-}(GDP_i)$ | − : richer → less vulnerable |
+| OSM landuse (green) | area → $GSA_i$ | Outdoor Heat Shelter Index $\text{OHSI}_i$ | $\text{rank\_normalize}(GSA_i / POP_i)$ | relative: more green/capita → higher rank |
+| OSM POIs + transport | weighted count → $POID_i$ | Indoor Heat Shelter Index $\text{IHSI}_i$ | $\text{rank\_normalize}(POID_i / PD_i \times \bar{W}_T)$ | relative: more POI/capita → higher rank |
 
 ---
 
@@ -196,7 +239,7 @@ $$
 \mathcal{N}^{-}(I) = 0.1 + 0.8 \cdot \frac{I_{\max} - I}{I_{\max} - I_{\min}}
 $$
 
-where $I_{\min}$ and $I_{\max}$ are the global minimum and maximum across all 73,270 blocks.
+where $I_{\min}$ and $I_{\max}$ are computed within the **3,854 urban core blocks** (inhabited blocks in the 7 central districts). OHSI and IHSI use percentile rank normalization instead; see Section 8.
 
 ---
 
@@ -221,16 +264,15 @@ Population density ($PD_i$, persons/km²) serves as both a direct exposure measu
 ### 7.3 Vulnerability ($V_i$)
 
 $$
-V_i = \frac{1}{3}\Big[\mathcal{N}^{-}(NL_i) + \mathcal{N}^{-}(GDP_i) + \mathcal{N}^{+}(PD_i)\Big]
+V_i = \frac{1}{2}\Big[\mathcal{N}^{-}(NL_i) + \mathcal{N}^{-}(GDP_i)\Big]
 $$
 
 | Sub-indicator | $\mathcal{N}$ | Rationale |
 |--------------|---------------|-----------|
 | Nightlight $NL_i$ | $\mathcal{N}^{-}$ | Higher luminosity → better infrastructure, AC penetration |
 | GDP $GDP_i$ | $\mathcal{N}^{-}$ | Higher GDP → greater adaptive capacity |
-| Pop. density $PD_i$ | $\mathcal{N}^{+}$ | Proxy for age-sensitive population concentration |
 
-The full model (Yang, 2025) uses 5 sub-indicators: $NL$, $GDP$, house prices, elderly density ($PD_{>65}$), child density ($PD_{<14}$). We use 3 due to data constraints (age-sex data: 51 GB; house prices: manual scraping required).
+Population density ($PD_i$) is **excluded** from $V_i$ to avoid double-counting: $PD_i$ already determines Exposure ($E_i$), and including it in $V_i$ would inflate its weight in the product $H \times E \times V$. The full model (Yang, 2025) uses 5 sub-indicators: $NL$, $GDP$, house prices, elderly density ($PD_{>65}$), child density ($PD_{<14}$). We use 2 due to data constraints (age-sex data: 51 GB; house prices: manual scraping required).
 
 ### 7.4 Multiplicative Aggregation
 
@@ -255,18 +297,22 @@ $$
 Green spaces provide cooling through canopy shading and evapotranspiration.
 
 $$
-\text{OHSI}_i = \mathcal{N}^{+}\!\left(\frac{GSA_i}{\max(POP_i,\; 1)}\right)
+\text{OHSI}_i = \text{rank\_normalize}\!\left(\frac{GSA_i}{\max(POP_i,\; 1)}\right)
 $$
 
-Green space classes from OSM `landuse_a`: `park`, `forest`, `grass`, `recreation_ground`, `meadow`, `nature_reserve`.
+where $\text{rank\_normalize}(x)$ maps the percentile rank of $x$ within the urban core blocks to $[0.1, 0.9]$. Blocks with zero green space all receive 0.1 (tied at minimum). Green space classes from OSM `landuse_a`: `park`, `forest`, `grass`, `recreation_ground`, `meadow`, `nature_reserve`.
+
+82.5% of urban core blocks have zero green space per capita. This is a real finding (green space is scarce in central Shanghai) combined with OSM undercounting of private green areas inside residential compounds.
 
 ### 8.2 Indoor Heat Shelter Index ($\text{IHSI}$)
 
 Air-conditioned public spaces serve as last-resort refuges during extreme heat.
 
 $$
-\text{IHSI}_i = \mathcal{N}^{+}\!\left(\frac{POID_i}{\max(PD_i,\; 0.001)} \cdot \bar{W}_T^{(i)}\right)
+\text{IHSI}_i = \text{rank\_normalize}\!\left(\frac{POID_i}{\max(PD_i,\; 0.001)} \cdot \bar{W}_T^{(i)}\right)
 $$
+
+72.4% of urban core blocks have no mapped indoor shelter POIs. OSM POI density in China is approximately 20× lower than proprietary sources (Gaode, Baidu), so IHSI captures relative access among de-facto mapped shelters, not all actual indoor cooling options.
 
 | Shelter category | OSM fclass | $W_T$ | Hours |
 |-----------------|-----------|-------|-------|
@@ -288,7 +334,23 @@ $$
 $$
 
 - $> 0$: block has **more risk than shelter supply** → priority intervention zone
+- $= 0$: shelter supply exactly matches heat risk → adequate
 - $< 0$: block has **surplus** cooling capacity relative to its risk level
+
+OHSPI and IHSPI range approximately $[-0.8,\; +0.8]$ because $\text{HRI}^{\text{norm}} \in [0.1, 0.9]$ and $\text{OHSI}/\text{IHSI} \in [0.1, 0.9]$. Negative values are **not anomalies** — they mean shelter supply exceeds local heat risk.
+
+### 9.1 Priority Categories
+
+Maps use 4 ordered categories to make findings interpretable to non-GIS judges and policy audiences:
+
+| Category | OHSPI / IHSPI range | Interpretation | Urban core (OHSPI) | Urban core (IHSPI) |
+|----------|---------------------|----------------|--------------------|-------------------|
+| **Adequate** | $< 0$ | Shelter supply exceeds risk | 675 blocks (17.5%) | 1,061 blocks (27.5%) |
+| **Low** | $[0,\; 0.1)$ | Small gap; monitor | 443 blocks (11.5%) | 402 blocks (10.4%) |
+| **Medium** | $[0.1,\; 0.3)$ | Moderate gap; plan investment | 2,414 blocks (62.6%) | 2,077 blocks (53.9%) |
+| **High** | $\geq 0.3$ | Large gap; immediate intervention | 322 blocks (8.4%) | 314 blocks (8.1%) |
+
+**Key finding**: 62.6% of urban core blocks show medium outdoor shelter priority; 8.4% show high priority. Indoor gaps are slightly better distributed (27.5% adequate vs. 17.5% for outdoor), reflecting greater spatial availability of commercial POIs than green space in the urban core.
 
 ```mermaid
 quadrantChart
@@ -314,7 +376,7 @@ quadrantChart
 
 In a multiplicative model $\text{HRI} = H \times E \times V$, each component has unit elasticity — a 1% increase in any input produces exactly a 1% increase in $\text{HRI}$. A standard OAT perturbation chart would show three identical overlapping lines, which is uninformative.
 
-Instead, we decompose the **empirical variance** of $\log(\text{HRI})$ across Shanghai's 26,784 populated blocks (excluding edge blocks with $T_i < 10$°C). Since $\log(\text{HRI}) = \log H + \log E + \log V$, the variance decomposes additively into main effects and covariance terms:
+Instead, we decompose the **empirical variance** of $\log(\text{HRI})$ across the 3,854 urban core blocks. Since $\log(\text{HRI}) = \log H + \log E + \log V$, the variance decomposes additively into main effects and covariance terms:
 
 | Component | Contribution to $\text{Var}(\log \text{HRI})$ |
 |-----------|-----------------------------------------------|
@@ -335,39 +397,35 @@ The scatter plot (b) confirms: $E$ shows a strong positive fan-shaped relationsh
 
 ## 11. Classification
 
-We apply **quantile classification** (7 classes) rather than Jenks natural breaks.
+**HRI** uses **Natural Breaks (Jenks)** classification with 7 classes, applied within the 3,854 urban core blocks. Within the urban core, the HRI distribution is substantially less skewed than across the full municipality (populated blocks only, no zero-population noise), so Jenks produces a more informative colour ramp.
 
-The $\text{HRI}$ distribution is heavily right-skewed (most blocks have low $\text{HRI}$ due to low population). Jenks placed 89% of blocks into the two lightest classes, producing a visually uninformative map. Quantile classification assigns equal block counts per class, ensuring the full colour ramp is utilised.
+**OHSPI and IHSPI** use the 4-category scheme described in Section 9.1 (Adequate / Low / Medium / High) rather than continuous classification. This is methodologically appropriate because negative values have a distinct policy meaning (shelter surplus) that should not be conflated with positive values on a continuous scale.
 
-| Class | Quantile range | Interpretation |
-|-------|---------------|----------------|
-| 1 | 0–14th percentile | Minimal risk |
-| 2 | 14–29th | Low risk |
-| 3 | 29–43rd | Below average |
-| 4 | 43–57th | Average |
-| 5 | 57–71st | Above average |
-| 6 | 71–86th | High risk |
-| 7 | 86–100th | Critical — priority intervention |
+| HRI Class | Block count | Interpretation |
+|-----------|------------|----------------|
+| 1 (lowest) | 447 | Minimal risk |
+| 2 | 1,374 | Low risk |
+| 3 | 966 | Below average |
+| 4 | 488 | Average |
+| 5 | 316 | Above average |
+| 6 | 171 | High risk |
+| 7 (highest) | 92 | Critical — priority intervention |
 
 ---
 
 ## 12. Results
 
-### Heat Risk Index ($\text{HRI}$) Spatial Distribution
+### Heat Risk Index ($\text{HRI}$) Spatial Distribution — Urban Core
 
-![HRI Map](https://raw.githubusercontent.com/Aurora-yang-git/HRI/refs/heads/cursor/shanghai-heat-risk-analysis-8327/output/maps/map_hri.png)
+Analysis scope: 3,854 inhabited blocks in 7 central Shanghai districts (黄浦 徐汇 长宁 静安 普陀 虹口 杨浦), total area ≈ 289 km².
 
-Central Shanghai (Huangpu, Jing'an, old Pudong) shows highest $\text{HRI}$ — the co-occurrence of extreme UTCI, high population density, and relatively lower GDP per capita. Suburban new towns (Songjiang, Jiading) show moderate risk. Rural and island areas (Chongming) are gray (zero-population blocks).
+Within the urban core, highest HRI concentrates in 黄浦区 (Huangpu) and parts of 杨浦区 (Yangpu) — areas combining high UTCI thermal load, dense population, and lower relative GDP. 静安区 (Jing'an), with its commercial core and higher nightlight intensity, shows lower Vulnerability and consequently lower HRI despite similar thermal conditions. 92 blocks (2.4%) fall in the highest HRI class and represent the most acute heat risk zones.
 
-### Shelter Priority ($\text{OHSPI}$ and $\text{IHSPI}$)
+### Shelter Priority ($\text{OHSPI}$ and $\text{IHSPI}$) — Urban Core
 
-![OHSPI](https://raw.githubusercontent.com/Aurora-yang-git/HRI/refs/heads/cursor/shanghai-heat-risk-analysis-8327/output/maps/map_ohspi.png)
+$\text{OHSPI}$ (outdoor/green space priority): 8.4% of urban core blocks are High priority; 62.6% are Medium. The green space deficit is most acute in 黄浦区 and 虹口区, where historic high-density development left little room for parks.
 
-![IHSPI](https://raw.githubusercontent.com/Aurora-yang-git/HRI/refs/heads/cursor/shanghai-heat-risk-analysis-8327/output/maps/map_ihspi.png)
-
-![Priority Composite](https://github.com/Aurora-yang-git/HRI/blob/cursor/shanghai-heat-risk-analysis-8327/output/maps/map_priority_composite.png?raw=true)
-
-$\text{OHSPI}$ reveals the inner-city green space deficit — old urban cores have the highest risk-to-shelter gap. $\text{IHSPI}$ shows a more dispersed pattern: some suburban residential areas with rapid population growth but lagging commercial development also score high.
+$\text{IHSPI}$ (indoor/commercial priority): 27.5% of blocks are Adequate (surplus indoor shelter), primarily in 静安区 and 徐汇区 commercial corridors. 8.1% are High priority, concentrated in residential sub-districts with low POI density. The indoor pattern is more spatially dispersed than the outdoor pattern, reflecting commercial clustering effects.
 
 ### Dashboard
 

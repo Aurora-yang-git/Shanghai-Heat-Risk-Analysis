@@ -23,6 +23,7 @@ import geopandas as gpd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import (
     BLOCKS_FILE,
+    BLOCKS_URBAN_FILE,
     CRS_UTM51N,
     CRS_WGS84,
     OSM_BUILDINGS,
@@ -33,6 +34,7 @@ from config import (
     OSM_WATER,
     OUTPUT_DIR,
     QGIS_PROJECT,
+    URBAN_DISTRICTS_FILE,
     UTCI_PROCESSED,
     POP_PROCESSED,
     NL_PROCESSED,
@@ -186,13 +188,13 @@ def build_simple_marker_renderer(color_rgba, size="1.5"):
 
 # -- Layer element builders ------------------------------------------------
 
-def gpkg_layer_element(display_name, gpkg_path, field, colors, breaks):
+def gpkg_layer_element(display_name, gpkg_path, layer_name, field, colors, breaks):
     lid = uid()
     ml = Element("maplayer", type="vector", geometry="Polygon",
                  hasScaleBasedVisibilityFlag="0")
     SubElement(ml, "id").text = lid
     SubElement(ml, "layername").text = display_name
-    SubElement(ml, "datasource").text = f"{gpkg_path}|layername=road_blocks"
+    SubElement(ml, "datasource").text = f"{gpkg_path}|layername={layer_name}"
     SubElement(ml, "provider").text = "ogr"
     _add_full_srs(ml, CRS_UTM51N, UTM51N_PROJ4, UTM51N_WKT)
     ml.append(build_graduated_renderer(field, colors, breaks))
@@ -347,17 +349,17 @@ def build_project(blocks_gdf, gpkg_rel_path):
 
     project_layers = SubElement(qgis, "projectlayers")
 
-    # ── 1. Analysis layers (graduated) ────────────────────────────────
+    # ── 1. Analysis layers (graduated, from urban GPKG) ──────────────
     hri_layer = gpkg_layer_element(
-        "Heat Risk Index (HRI)", gpkg_rel_path, "hri_norm", YLOR_RD, hri_breaks)
+        "Heat Risk Index (HRI)", gpkg_rel_path, "road_blocks_urban", "hri_norm", YLOR_RD, hri_breaks)
     ohsi_layer = gpkg_layer_element(
-        "Outdoor Heat Shelter Index (OHSI)", gpkg_rel_path, "ohsi", GREENS, ohsi_breaks)
+        "Outdoor Heat Shelter Index (OHSI)", gpkg_rel_path, "road_blocks_urban", "ohsi", GREENS, ohsi_breaks)
     ihsi_layer = gpkg_layer_element(
-        "Indoor Heat Shelter Index (IHSI)", gpkg_rel_path, "ihsi", BLUES, ihsi_breaks)
+        "Indoor Heat Shelter Index (IHSI)", gpkg_rel_path, "road_blocks_urban", "ihsi", BLUES, ihsi_breaks)
     ohspi_layer = gpkg_layer_element(
-        "Outdoor HS Priority (OHSPI)", gpkg_rel_path, "ohspi", RDYLGN_R, ohspi_breaks)
+        "Outdoor HS Priority (OHSPI)", gpkg_rel_path, "road_blocks_urban", "ohspi", RDYLGN_R, ohspi_breaks)
     ihspi_layer = gpkg_layer_element(
-        "Indoor HS Priority (IHSPI)", gpkg_rel_path, "ihspi", RDYLGN_R, ihspi_breaks)
+        "Indoor HS Priority (IHSPI)", gpkg_rel_path, "road_blocks_urban", "ihspi", RDYLGN_R, ihspi_breaks)
 
     analysis_layers = [hri_layer, ohsi_layer, ihsi_layer, ohspi_layer, ihspi_layer]
 
@@ -413,7 +415,16 @@ def build_project(blocks_gdf, gpkg_rel_path):
             build_simple_marker_renderer("200,80,80,200", "2.0"))
         osm_layers.append(transport)
 
-    # ── 4. Basemap tiles ──────────────────────────────────────────────
+    # ── 4. District boundary reference layer ─────────────────────────
+    boundary_layers = []
+    if URBAN_DISTRICTS_FILE.exists():
+        dist_layer = shp_layer_element(
+            "Urban Districts (7 Central, Outline)",
+            URBAN_DISTRICTS_FILE, "Polygon",
+            build_simple_fill_renderer("0,0,0,0", "60,60,60,220", "0.8"))
+        boundary_layers.append(dist_layer)
+
+    # ── 5. Basemap tiles ──────────────────────────────────────────────
     basemap_carto = xyz_basemap_element(
         "CartoDB Positron",
         "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png")
@@ -424,7 +435,7 @@ def build_project(blocks_gdf, gpkg_rel_path):
     basemap_layers = [basemap_carto, basemap_osm]
 
     # ── Add all layers to project ─────────────────────────────────────
-    all_layers = analysis_layers + raster_layers + osm_layers + basemap_layers
+    all_layers = analysis_layers + raster_layers + osm_layers + boundary_layers + basemap_layers
     for layer in all_layers:
         project_layers.append(layer)
 
@@ -442,6 +453,9 @@ def build_project(blocks_gdf, gpkg_rel_path):
                    raster_layers, checked=True, visible=True)
     add_tree_group(layer_tree, "OSM Context Layers",
                    osm_layers, checked=True, visible=True)
+    if boundary_layers:
+        add_tree_group(layer_tree, "District Boundaries",
+                       boundary_layers, checked=True, visible=True)
     add_tree_group(layer_tree, "Basemap Tiles",
                    basemap_layers, checked=True, visible=True)
 
@@ -455,10 +469,10 @@ def main():
     print("STEP 9: Generate QGIS Project")
     print("=" * 60)
 
-    blocks = gpd.read_file(BLOCKS_FILE)
-    print(f"\n  Loaded {len(blocks)} blocks")
+    blocks = gpd.read_file(BLOCKS_URBAN_FILE)
+    print(f"\n  Loaded {len(blocks)} urban inhabited blocks")
 
-    gpkg_rel = str(BLOCKS_FILE)
+    gpkg_rel = str(BLOCKS_URBAN_FILE)
 
     qgs_xml = build_project(blocks, gpkg_rel)
 

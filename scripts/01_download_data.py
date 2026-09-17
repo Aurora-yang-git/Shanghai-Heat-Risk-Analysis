@@ -23,6 +23,7 @@ from config import (
     UTCI_URL, POP_URL, NL_URL, GDP_URL,
     UTCI_DIR, POP_DIR, NL_DIR, GDP_DIR,
     SHANGHAI_BBOX,
+    URBAN_DISTRICTS, URBAN_DISTRICTS_FILE,
 )
 
 
@@ -224,6 +225,92 @@ def download_gdp() -> Path:
     return dest
 
 
+# -- 5. District boundaries ------------------------------------------------
+
+def download_districts() -> Path:
+    """Download Shanghai urban district boundaries from Nominatim (OSM).
+
+    Queries each district by Chinese name and retrieves the polygon geometry
+    with polygon_geojson=1. Saves to URBAN_DISTRICTS_FILE in WGS84.
+    Rate-limited to 1 request/second per Nominatim usage policy.
+    """
+    print("\n-- Shanghai Urban Districts (Nominatim / OSM) --")
+    out_path = URBAN_DISTRICTS_FILE
+    if out_path.exists() and out_path.stat().st_size > 1_000:
+        print(f"  [skip] {out_path.name} already exists ({out_path.stat().st_size / 1e3:.1f} KB)")
+        return out_path
+
+    import geopandas as gpd
+    from shapely.geometry import shape
+
+    nominatim_url = "https://nominatim.openstreetmap.org/search"
+    headers = {"User-Agent": "Shanghai-HRI-Academic-Pipeline/1.0"}
+    features = []
+
+    # Use a proxy-aware session (the global SESSION disables the proxy for large
+    # downloads; Nominatim requires the system proxy to be accessible).
+    import requests as _requests
+    from shapely.geometry import box as _box
+    _session = _requests.Session()
+    _shanghai_bbox = _box(120.85, 30.68, 122.0, 31.88)  # clip bad geometries
+    _MIN_AREA_DEG2 = 0.0004  # ~5 km² at Shanghai latitude
+
+    for name in URBAN_DISTRICTS:
+        print(f"  Querying: {name} ...", end=" ", flush=True)
+        geom_valid = None
+
+        # Try plain name first; fall back to appending context for disambiguation
+        for query_str in [name, f"{name}, 上海市"]:
+            params = {
+                "q": query_str,
+                "format": "json",
+                "limit": 1,
+                "polygon_geojson": 1,
+                "countrycodes": "cn",
+            }
+            resp = _session.get(nominatim_url, params=params, headers=headers, timeout=30)
+            resp.raise_for_status()
+            results = resp.json()
+            time.sleep(1.1)
+
+            if not results:
+                continue
+            r = results[0]
+            geojson = r.get("geojson", {})
+            if not geojson:
+                continue
+
+            geom = shape(geojson)
+            if geom.geom_type not in ("Polygon", "MultiPolygon"):
+                continue
+
+            # Clip to Shanghai bbox (removes erroneous geometry from corrupt OSM rings)
+            geom_clipped = geom.intersection(_shanghai_bbox)
+            if geom_clipped.is_empty or geom_clipped.area < _MIN_AREA_DEG2:
+                continue
+
+            geom_valid = geom_clipped
+            break
+
+        if geom_valid is None:
+            print("[WARN] no valid polygon found")
+            continue
+
+        features.append({"name": name, "geometry": geom_valid})
+        print(f"[OK] ({geom_valid.geom_type})")
+
+    if not features:
+        raise RuntimeError(
+            "No district boundaries retrieved from Nominatim. "
+            "Check internet connection or try again later."
+        )
+
+    gdf = gpd.GeoDataFrame(features, crs="EPSG:4326")
+    gdf.to_file(out_path, driver="GPKG")
+    print(f"  [OK] Saved {len(features)}/{len(URBAN_DISTRICTS)} districts -> {out_path}")
+    return out_path
+
+
 # -- Main ------------------------------------------------------------------
 
 def main():
@@ -236,12 +323,15 @@ def main():
     paths["population"] = download_population()
     paths["nightlight"] = download_nightlight()
     paths["gdp"] = download_gdp()
+    paths["districts"] = download_districts()
 
     print("\n" + "=" * 60)
     print("Download summary:")
     for name, p in paths.items():
         sz = p.stat().st_size / 1e6 if p.exists() else 0
-        print(f"  {name:15s} -> {p}  ({sz:.1f} MB)")
+        unit = "MB" if sz >= 0.1 else "KB"
+        sz_disp = sz if sz >= 0.1 else sz * 1000
+        print(f"  {name:15s} -> {p}  ({sz_disp:.1f} {unit})")
     print("=" * 60)
 
     return paths

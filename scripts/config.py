@@ -122,4 +122,12 @@ BOUNDARY_FILE = PROCESSED_DIR / "shanghai_boundary.gpkg"
 
 # -- Output file paths ----------------------------------------------------
 BLOCKS_FILE = BLOCKS_DIR / "road_blocks.gpkg"
+BLOCKS_URBAN_FILE = BLOCKS_DIR / "road_blocks_urban.gpkg"
 QGIS_PROJECT = OUTPUT_DIR / "shanghai_heat_risk.qgz"
+
+# -- Urban core analysis scope --------------------------------------------
+URBAN_DISTRICTS = [
+    "黄浦区", "徐汇区", "长宁区", "静安区", "普陀区", "虹口区", "杨浦区"
+]
+URBAN_DISTRICTS_FILE = DATA_DIR / "shanghai_urban_districts.gpkg"
+ANALYSIS_SCOPE = "urban_core"  # "urban_core" | "full_municipality"
