@@ -1,12 +1,3 @@
----
-tags:
-  - grade/G11
-  - type/project
-  - Area/AI
-  - status/active
-last_archived: 2026-05-29
----
-
 # Shanghai Heat Risk Analysis (HRI)
 
 Automated GIS pipeline for neighbourhood-scale heat-risk assessment and heat-shelter supply-demand mismatch analysis in Shanghai, using the **HRI + Shelter** framework.
